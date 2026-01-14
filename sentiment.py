@@ -1,45 +1,40 @@
 import pandas as pd
-from textblob import TextBlob
-import os
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
 
+df = pd.read_excel("applevr_comments.xlsx")
 
-file_path = 'C:\\Users\\hp\\Desktop\\python\\applevr.xlsx'  
+model_name = "yangheng/deberta-v3-base-absa-v1.1"
 
-if not os.path.exists(file_path):
-    print(f"Error: The file '{file_path}' does not exist.")
-else:
-    df = pd.read_excel(file_path, skiprows=1)
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSequenceClassification.from_pretrained(model_name)
 
-    df.columns = ['Comments']
+classifier = pipeline(
+    "text-classification",
+    model=model,
+    tokenizer=tokenizer,
+    return_all_scores=True
+)
 
-    print("Initial DataFrame:")
-    print(df.head())
+target_aspect = "Apple Vision Pro"
 
-    def analyze_sentiment(text):
-        if pd.isna(text):  
-            return 0 
-        blob = TextBlob(text)
-        return blob.sentiment.polarity
+def analyze_aspect_sentiment(text, aspect):
 
-   
-    df['sentiment_score'] = df['Comments'].apply(analyze_sentiment)
+    result = classifier(text, text_pair=aspect, truncation=True)
+    best = max(result[0], key=lambda x: x['score'])
+    return best['label'], best['score']
 
-    
-    def categorize_sentiment(score):
-        if score > 0:
-            return 'Positive'
-        elif score < 0:
-            return 'Negative'
-        else:
-            return 'Neutral'
+labels = []
+scores = []
+for txt in df['Comments'].astype(str):
+    label, score = analyze_aspect_sentiment(txt, target_aspect)
+    labels.append(label)
+    scores.append(score)
 
-    df['sentiment_category'] = df['sentiment_score'].apply(categorize_sentiment)
+df['sentiment_label'] = labels
+df['sentiment_score'] = scores
 
-    print("\nDataFrame with Sentiment Scores and Categories:")
-    print(df[['Comments', 'sentiment_score', 'sentiment_category']].head())
+label_to_num = {'Negative': -1, 'Neutral': 0, 'Positive': 1}
+df['sentiment_numeric'] = df['sentiment_label'].map(label_to_num)
 
-   
-    output_file_path = 'analyzed_applevr_comments.xlsx'
-    df.to_excel(output_file_path, index=False)
-
-    print(f"\nResults saved to {output_file_path}")
+df.to_csv("applevr_comments_with_aspect_sentiment.csv", index=False)
+print(df.head())
